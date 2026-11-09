@@ -1,0 +1,21 @@
+name: 功能建议
+description: 提一个新功能或改进想法
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么问题
+      description: 描述使用场景，而不是直接说方案
+      placeholder: |
+        每次换模型都要重启 DSH，希望能自动切换。
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: 你设想的做法（可选）
+    validations:
+      required: false

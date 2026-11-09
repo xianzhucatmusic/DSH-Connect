@@ -1,0 +1,19 @@
+# 构建产物
+build/
+*.app/
+*.dSYM/
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
+
+# 用户数据（不进仓库）
+*.vital
+presets/
+chats/
+logs/

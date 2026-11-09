@@ -1,0 +1,79 @@
+name: 问题反馈
+description: 报告一个 bug 或异常行为
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量把信息填完整，尤其是日志——大部分问题看日志就能定位。
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+      description: 你期望的结果 vs 实际的结果
+      placeholder: |
+        期望：点键盘能听到声音
+        实际：没有声音
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 App
+        2. 导入模型
+        3. 点「启动服务」
+        4. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: chip
+    attributes:
+      label: 芯片
+      options:
+        - M1
+        - M1 Pro / Max / Ultra
+        - M2
+        - M2 Pro / Max / Ultra
+        - M3
+        - M3 Pro / Max / Ultra
+        - M4
+        - M4 Pro / Max
+        - 其它 / 不确定
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS 版本
+      placeholder: "例如 15.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: model
+    attributes:
+      label: 模型来源
+      options:
+        - 自己下载的 GGUF
+        - App 内置下载功能
+        - 不确定
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志
+      description: |
+        App 里「日志」页的内容，或下面这个文件：
+        `~/Library/Application Support/XianzhuDSHConnect/logs/llama-server-8686.log`
+      render: shell
+    validations:
+      required: false

@@ -1,0 +1,96 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (Apple Silicon)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          uname -m
+
+      - name: Build app
+        run: |
+          # CI 不打包 llama.cpp（体积大、与模型相关），只验证能否编译
+          ./build.sh --no-llama
+
+      - name: Verify bundle
+        run: |
+          test -x "build/XianzhuDSHConnect.app/Contents/MacOS/XianzhuDSHConnect"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" \
+            "build/XianzhuDSHConnect.app/Contents/Info.plist"
+
+      - name: Package artifact
+        run: |
+          cd build
+          ditto -c -k --sequesterRsrc --keepParent XianzhuDSHConnect.app \
+            XianzhuDSHConnect-arm64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XianzhuDSHConnect-arm64
+          path: build/XianzhuDSHConnect-arm64.zip
+          retention-days: 14
+
+  release:
+    name: Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build app
+        run: ./build.sh --no-llama
+
+      - name: Package
+        run: |
+          cd build
+          ditto -c -k --sequesterRsrc --keepParent XianzhuDSHConnect.app \
+            "XianzhuDSHConnect-${GITHUB_REF_NAME}-arm64.zip"
+          shasum -a 256 "XianzhuDSHConnect-${GITHUB_REF_NAME}-arm64.zip" \
+            > "XianzhuDSHConnect-${GITHUB_REF_NAME}-arm64.zip.sha256"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/XianzhuDSHConnect-*.zip
+            build/XianzhuDSHConnect-*.zip.sha256
+          generate_release_notes: true
+          body: |
+            ## 安装
+
+            1. 下载并解压 `XianzhuDSHConnect-*-arm64.zip`
+            2. 把 `XianzhuDSHConnect.app` 拖进「应用程序」
+            3. 首次打开若提示「无法验证开发者」，右键点 App → 打开
+
+            ## 注意
+
+            这个构建**不含 llama.cpp 推理引擎**。首次使用需要把它放到
+            `~/Library/Application Support/XianzhuDSHConnect/llama/`：
+
+            ```bash
+            # 从官方 release 下载 macOS arm64 版本
+            # https://github.com/ggml-org/llama.cpp/releases
+            mkdir -p ~/Library/Application\ Support/XianzhuDSHConnect/llama
+            tar -xzf llama-b*-bin-macos-arm64.tar.gz \
+              -C ~/Library/Application\ Support/XianzhuDSHConnect/llama \
+              --strip-components=1
+            ```
+
+            需要 macOS 14+ 和 Apple Silicon。
