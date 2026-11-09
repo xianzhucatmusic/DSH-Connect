@@ -59,14 +59,21 @@ jobs:
 
       - name: 检查没有残留的个人路径
         run: |
-          if grep -rn "/Users/[a-zA-Z0-9]*/" Sources/ 2>/dev/null | grep -v "serenity" | head -5; then
-            echo "::warning::源码中可能有硬编码路径，请确认"
-          fi
-          if grep -rn "/Users/serenity" Sources/ 2>/dev/null | head -5; then
+          # 只在命中时才报错；grep 无匹配返回 1，这里是预期情况
+          hits=$(grep -rn "/Users/serenity" Sources/ 2>/dev/null || true)
+          if [ -n "$hits" ]; then
             echo "::error::源码中包含开发者个人路径"
+            echo "$hits"
             exit 1
           fi
           echo "✓ 无个人路径残留"
+
+          # 其它硬编码绝对路径只警告，不阻断
+          other=$(grep -rnE "/Users/[a-zA-Z0-9_-]+/" Sources/ 2>/dev/null || true)
+          if [ -n "$other" ]; then
+            echo "::warning::检测到绝对路径，请确认是否为有意为之："
+            echo "$other" | head -5
+          fi
 
       - name: 检查 shell 脚本语法
         run: |
