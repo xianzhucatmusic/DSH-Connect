@@ -1,96 +1,90 @@
 name: Build
 
+# 说明：macOS runner 按 10 倍计费（1 分钟 = 10 额度分钟），
+# 免费额度很容易被一次完整构建吃光。
+# 所以这里的 CI 只做**静态检查**（十几秒），真正的构建在本地跑 build.sh。
+#
+# 想恢复完整构建：把 `runs-on: ubuntu-latest` 换成 `macos-14`，
+# 并取消下面 `Build app` 步骤的注释。前提是 Actions 额度充足。
+
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build (Apple Silicon)
-    runs-on: macos-14
+  lint:
+    name: 结构检查
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show toolchain
+      - name: 检查必需文件
         run: |
-          xcodebuild -version
-          swift --version
-          uname -m
+          set -e
+          required=(LICENSE README.md CONTRIBUTING.md SECURITY.md build.sh)
+          for f in "${required[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::缺少必需文件 $f"
+              exit 1
+            fi
+            echo "✓ $f"
+          done
 
-      - name: Build app
+      - name: 检查 Swift 源码
         run: |
-          # CI 不打包 llama.cpp（体积大、与模型相关），只验证能否编译
-          ./build.sh --no-llama
+          set -e
+          count=$(find Sources -name '*.swift' | wc -l | tr -d ' ')
+          echo "Swift 文件: $count 个"
+          if [ "$count" -lt 5 ]; then
+            echo "::error::Swift 文件数量异常（$count）"
+            exit 1
+          fi
 
-      - name: Verify bundle
+      - name: 检查 Info.plist
         run: |
-          test -x "build/XianzhuDSHConnect.app/Contents/MacOS/XianzhuDSHConnect"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" \
-            "build/XianzhuDSHConnect.app/Contents/Info.plist"
+          set -e
+          if ! grep -q "CFBundleExecutable" App/Info.plist; then
+            echo "::error::Info.plist 缺少 CFBundleExecutable"
+            exit 1
+          fi
+          exe=$(grep -A1 "CFBundleExecutable" App/Info.plist | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | tr -d ' \t')
+          echo "CFBundleExecutable = $exe"
+          if [ ! -f "Sources/XianzhuDSHConnect/main.swift" ]; then
+            echo "::error::找不到 main.swift"
+            exit 1
+          fi
 
-      - name: Package artifact
+      - name: 检查没有残留的个人路径
         run: |
-          cd build
-          ditto -c -k --sequesterRsrc --keepParent XianzhuDSHConnect.app \
-            XianzhuDSHConnect-arm64.zip
+          if grep -rn "/Users/[a-zA-Z0-9]*/" Sources/ 2>/dev/null | grep -v "serenity" | head -5; then
+            echo "::warning::源码中可能有硬编码路径，请确认"
+          fi
+          if grep -rn "/Users/serenity" Sources/ 2>/dev/null | head -5; then
+            echo "::error::源码中包含开发者个人路径"
+            exit 1
+          fi
+          echo "✓ 无个人路径残留"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: XianzhuDSHConnect-arm64
-          path: build/XianzhuDSHConnect-arm64.zip
-          retention-days: 14
-
-  release:
-    name: Release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: macos-14
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build app
-        run: ./build.sh --no-llama
-
-      - name: Package
+      - name: 检查 shell 脚本语法
         run: |
-          cd build
-          ditto -c -k --sequesterRsrc --keepParent XianzhuDSHConnect.app \
-            "XianzhuDSHConnect-${GITHUB_REF_NAME}-arm64.zip"
-          shasum -a 256 "XianzhuDSHConnect-${GITHUB_REF_NAME}-arm64.zip" \
-            > "XianzhuDSHConnect-${GITHUB_REF_NAME}-arm64.zip.sha256"
+          bash -n build.sh
+          echo "✓ build.sh 语法正确"
+          for f in dist/*.sh; do
+            [ -f "$f" ] && bash -n "$f" && echo "✓ $f"
+          done
 
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            build/XianzhuDSHConnect-*.zip
-            build/XianzhuDSHConnect-*.zip.sha256
-          generate_release_notes: true
-          body: |
-            ## 安装
-
-            1. 下载并解压 `XianzhuDSHConnect-*-arm64.zip`
-            2. 把 `XianzhuDSHConnect.app` 拖进「应用程序」
-            3. 首次打开若提示「无法验证开发者」，右键点 App → 打开
-
-            ## 注意
-
-            这个构建**不含 llama.cpp 推理引擎**。首次使用需要把它放到
-            `~/Library/Application Support/XianzhuDSHConnect/llama/`：
-
-            ```bash
-            # 从官方 release 下载 macOS arm64 版本
-            # https://github.com/ggml-org/llama.cpp/releases
-            mkdir -p ~/Library/Application\ Support/XianzhuDSHConnect/llama
-            tar -xzf llama-b*-bin-macos-arm64.tar.gz \
-              -C ~/Library/Application\ Support/XianzhuDSHConnect/llama \
-              --strip-components=1
-            ```
-
-            需要 macOS 14+ 和 Apple Silicon。
+  # 本地构建用：
+  #   ./build.sh --no-llama
+  #
+  # 需要 CI 构建时，改用 macos-14 runner（注意额度消耗）：
+  #
+  # build:
+  #   name: Build (Apple Silicon)
+  #   runs-on: macos-14
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - run: ./build.sh --no-llama
+  #     - run: test -x "build/XianzhuDSHConnect.app/Contents/MacOS/XianzhuDSHConnect"
