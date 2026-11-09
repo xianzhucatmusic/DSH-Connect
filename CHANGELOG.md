@@ -26,4 +26,4 @@
 - llama.cpp 的 `--parallel` 会平分上下文，默认值设为 `1` 避免窗口被切碎。
 - 推理引擎不打包进仓库，由用户自行放入或首次启动时指定路径。
 
-[1.0.0]: https://github.com/your-org/xianzhu-dsh-connect/releases/tag/v1.0.0
+[1.0.0]: https://github.com/xianzhucatmusic/DSH-Connect/releases/tag/v1.0.0

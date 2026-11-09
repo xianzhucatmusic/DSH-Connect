@@ -56,7 +56,7 @@ DSH 默认调用云端模型。接本地模型时有两个实际困难：
 ## 安装
 
 ```bash
-git clone https://github.com/<your-org>/xianzhu-dsh-connect.git
+git clone https://github.com/xianzhucatmusic/DSH-Connect.git
 cd xianzhu-dsh-connect
 ./build.sh
 open build/XianzhuDSHConnect.app
