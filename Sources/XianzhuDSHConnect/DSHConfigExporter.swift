@@ -81,6 +81,7 @@ enum DSHConfigExporter {
         let ctxWindow = ctl.config.contextSize
         let maxTokens = max(ctxWindow / 8, 1024)
         let models = ctl.models
+        let disableThinking = ctl.config.disableThinking
 
         var lines: [String] = []
         lines.append(blockStart)
@@ -117,7 +118,21 @@ enum DSHConfigExporter {
         }
 
         lines.append("        compat:")
-        lines.append("          thinkingFormat: qwen-chat-template")
+        if disableThinking {
+            // 关思考必须走 chat-template 分支。
+            //
+            // 原因：pi-ai 在 qwen-chat-template 分支里写死了
+            //     enable_thinking: !!options.reasoningEffort
+            // 而 DSH 传进来的是字符串 "off"，!!"off" === true，
+            // 所以哪怕 DSH 里选了 off，思考也一直是开的。
+            //
+            // 换成 chat-template 后走 buildChatTemplateValues，可以显式给值。
+            lines.append("          thinkingFormat: chat-template")
+            lines.append("          chatTemplateKwargs:")
+            lines.append("            enable_thinking: false")
+        } else {
+            lines.append("          thinkingFormat: qwen-chat-template")
+        }
         lines.append("          supportsReasoningEffort: false")
         lines.append("          maxTokensField: max_tokens")
         lines.append(blockEnd)

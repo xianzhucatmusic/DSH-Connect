@@ -115,6 +115,11 @@ struct AppConfig: Codable {
     var flashAttention: Bool = true
     var useFit: Bool = true
     var reasoningPreserve: Bool = true
+    /// 关闭模型思考。推理模型默认先写一大段 thinking 再回答，
+    /// 简单问题会白白耗掉几万 token。开启后：
+    ///   · 导出 DSH 配置时注入 enable_thinking: false
+    ///   · 停止传 --reasoning-preserve
+    var disableThinking: Bool = false
     var routing: Routing = .local
     var apiKey: String = ""
     var requireApiKey: Bool = true
@@ -264,6 +269,9 @@ final class ServerController: ObservableObject {
         if config.apiKey.isEmpty {
             config.apiKey = ServerController.makeToken()
         }
+        // 启动时把磁盘上的真实状态读进界面，避免两边不一致
+        let disabledOnDisk = ToolGroupWriter.readDisabled()
+        config.leanDisabledGroups = Array(disabledOnDisk)
         leanStateAtLaunch = (config.leanPromptEnabled, config.leanDisabledGroups)
         groupEnabledUI = groupEnabled
         tailLog()
@@ -582,6 +590,31 @@ final class ServerController: ObservableObject {
     @Published var detecting: Bool = false
 
     /// 重新扫描本机的 DSH 工具（会话日志 → profile 配置 → 插件包）。
+    /// 把精简开关落盘到 ~/.dsh/tool-groups.json。
+    /// lean=true 时只保留核心组，其余全部关闭。
+    func writeToolGroups(lean: Bool) {
+        let keep: Set<String> = ["core", "search", "jobs", "plan", "goals", "ask", "mcp"]
+        var disabled: Set<String>
+        if lean {
+            disabled = Set(ToolGroupWriter.groups.map(\.id)).subtracting(keep)
+        } else {
+            disabled = []
+        }
+        do {
+            let url = try ToolGroupWriter.write(disabled: disabled)
+            config.leanDisabledGroups = Array(disabled)
+            config.save()
+            groupEnabledUI = groupEnabled
+            let saved = ToolGroupWriter.savedTokens(disabled: disabled)
+            statusLine = lean
+                ? "已精简工具，预计省下 \(saved / 1000)K token（新会话生效）"
+                : "已恢复全部工具组"
+            _ = url
+        } catch {
+            statusLine = "写入工具组状态失败：\(error.localizedDescription)"
+        }
+    }
+
     func redetectTools() {
         detecting = true
         DispatchQueue.global(qos: .userInitiated).async {
@@ -1092,6 +1125,43 @@ struct SettingsTab: View {
                 Toggle("Flash Attention (-fa)", isOn: $ctl.config.flashAttention)
                 Toggle("按显存自动收缩参数 (--fit)", isOn: $ctl.config.useFit)
                 Toggle("保留思考内容 (--reasoning-preserve)", isOn: $ctl.config.reasoningPreserve)
+
+                // 推理模型默认先写一大段思考再回答，简单问题也会耗掉几万 token。
+                // 打开这个开关后，导出 DSH 配置时会注入 enable_thinking: false。
+                // 精简工具：真正写进 DSH 的状态文件，只在新建会话时生效。
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle("精简工具（关掉用不上的工具组，省下大量窗口）",
+                           isOn: Binding(
+                            get: { ctl.config.leanPromptEnabled },
+                            set: { newValue in
+                                ctl.config.leanPromptEnabled = newValue
+                                ctl.config.save()
+                                ctl.writeToolGroups(lean: newValue)
+                            }))
+                    Text("打开后只保留核心工具（文件、终端、搜索等），关掉逆向工程、音乐等重型组。\n改动只影响**新建**的会话，已有会话不受影响。")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Palette.inkFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle("关闭模型思考（响应更快，省 token）", isOn: $ctl.config.disableThinking)
+                        .onChange(of: ctl.config.disableThinking) { _, _ in ctl.config.save() }
+                    Text("推理模型会先思考再回答。关掉后像「你好」这样的简单问题直接出结果。改完需要在「导入到 DSH」里重新导入一次配置，然后重启 DSH。")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Palette.inkFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if ctl.config.disableThinking {
+                    HStack(spacing: 6) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Palette.skyDeep)
+                        Text("已关闭思考。如果模型仍先思考，说明配置还没重新导入。")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Palette.inkSoft)
+                    }
+                }
             }
             Section("工具提示词：加载模型时勾选启用哪些") {
                 HStack {
